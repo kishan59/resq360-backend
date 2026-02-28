@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import userRoutes from './src/routes/userRoutes.js';
 import encounterRoutes from './src/routes/encounterRoutes.js';
 import patientRoutes from './src/routes/patientRoutes.js';
+import medicalLogRoutes from './src/routes/medicalLogRoutes.js';
 
 dotenv.config();
 
@@ -15,6 +16,7 @@ app.use(express.json());
 app.use('/api/users', userRoutes);
 app.use('/api/encounters', encounterRoutes);
 app.use('/api/patients', patientRoutes);
+app.use('/api/medical-logs', medicalLogRoutes);
 
 const PORT = process.env.PORT || 5000;
 
