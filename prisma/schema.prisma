@@ -1,0 +1,151 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// --- Enums for strict data validation ---
+
+enum Role {
+  ADMIN
+  VET
+  RESCUER
+}
+
+enum EncounterStatus {
+  PENDING
+  MERGED_TO_PATIENT
+  CLOSED
+}
+
+enum TriageColor {
+  RED       
+  ORANGE    
+  YELLOW    
+  BLUE      
+  GREEN     
+}
+
+enum ActionType {
+  MEDICATION
+  DIET
+  SURGERY
+  GENERAL_CARE
+}
+
+// NEW: Tracks if a collar is currently in use or can be recycled
+enum PatientStatus {
+  ACTIVE
+  RELEASED
+  DECEASED
+}
+
+// --- Core Models ---
+
+model User {
+  id             String         @id @default(uuid())
+  name           String
+  role           Role           @default(RESCUER)
+  biometric_hash String?        
+  auth_token     String?
+  
+  encounters     Encounter[]    @relation("EncounterCreator")
+  medical_logs   MedicalLog[]   @relation("LogAdministeredBy")
+  
+  created_at     DateTime       @default(now())
+  updated_at     DateTime       @updatedAt
+}
+
+// NEW: The "Good Samaritan" / Community Tracker
+model Reporter {
+  id                     String      @id @default(uuid())
+  name                   String?     // Nullable so anonymous callers stay private
+  phone_number           String?
+  is_anonymous           Boolean     @default(false)
+  total_rescues_reported Int         @default(0) // Great metric for NGO outreach!
+  
+  encounters             Encounter[] // Links this reporter to all animals they found
+  
+  created_at             DateTime    @default(now())
+  updated_at             DateTime    @updatedAt
+}
+
+model Encounter {
+  id               String          @id @default(uuid())
+  temp_status      EncounterStatus @default(PENDING)
+  gps_lat          Float           
+  gps_lon          Float
+  voice_transcript String?         @db.Text
+  raw_photo_url    String?
+  
+  // The Rescuer who picked up the animal
+  created_by_id    String
+  created_by       User            @relation("EncounterCreator", fields: [created_by_id], references: [id])
+  
+  // NEW: The Community Member who called it in (Optional)
+  reporter_id      String?
+  reporter         Reporter?       @relation(fields: [reporter_id], references: [id])
+  
+  patient_id       String?         
+  patient          Patient?        @relation(fields: [patient_id], references: [id])
+  
+  created_at       DateTime        @default(now())
+}
+
+model Patient {
+  id               String         @id @default(uuid())
+  qr_code_id       String?        @unique
+  species          String?
+  breed            String?
+  color            String?
+  triage_color     TriageColor    @default(GREEN)
+  assigned_cage_id String?
+  status           PatientStatus  @default(ACTIVE) // NEW: Controls the QR lifecycle
+  
+  encounters       Encounter[]
+  medical_logs     MedicalLog[]
+  task_schedules   TaskSchedule[]
+  
+  created_at       DateTime       @default(now())
+  updated_at       DateTime       @updatedAt
+}
+
+model MedicalLog {
+  id               String      @id @default(uuid())
+  action_type      ActionType
+  notes            String?     @db.Text 
+  
+  patient_id       String
+  patient          Patient     @relation(fields: [patient_id], references: [id])
+  
+  administered_by  String
+  user             User        @relation("LogAdministeredBy", fields: [administered_by], references: [id])
+  
+  timestamp        DateTime    @default(now())
+}
+
+model TaskSchedule {
+  id               String      @id @default(uuid())
+  task_description String
+  frequency        String      
+  next_due_date    DateTime
+  
+  patient_id       String
+  patient          Patient     @relation(fields: [patient_id], references: [id])
+  
+  created_at       DateTime    @default(now())
+}
+
+model Inventory {
+  item_id          String      @id @default(uuid())
+  name             String
+  category         String      
+  current_stock    Int         @default(0)
+  cost_per_unit    Float       @default(0.0)
+  
+  updated_at       DateTime    @updatedAt
+}
