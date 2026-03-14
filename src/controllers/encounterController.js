@@ -1,84 +1,48 @@
 import { prisma } from '../config/db.js';
 
+// POST: The absolute first action in the field (Snap Photo + Auto-GPS)
 export const createEncounter = async (req, res) => {
   try {
-    // 1. Grab the raw data, now including the optional reporter_id
-    const { 
-      gps_lat, 
-      gps_lon, 
-      voice_transcript, 
-      raw_photo_url, 
-      created_by_id, 
-      reporter_id // <-- NEW
+    const {
+      initial_media_url,
+      initial_media_is_video,
+      pickup_lat,
+      pickup_lon,
+      created_by_id // Passed from the mobile app (eventually from a secure JWT)
     } = req.body;
 
-    // 2. Strict Validation: Location and Rescuer ID are mandatory
-    if (!gps_lat || !gps_lon || !created_by_id) {
-      return res.status(400).json({ 
-        status: 'error', 
-        message: 'GPS coordinates and a valid Rescuer ID are strictly required.' 
+    // 1. Strict Validation: We absolutely cannot proceed without the photo, GPS, or Employee ID.
+    if (!initial_media_url || pickup_lat === undefined || pickup_lon === undefined || !created_by_id) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Missing required field data. Media URL, GPS coordinates, and Employee ID are strictly required.'
       });
     }
 
-    // 3. Insert the new Encounter into the database
+    // 2. Save the rough data to the database
     const newEncounter = await prisma.encounter.create({
       data: {
-        gps_lat: parseFloat(gps_lat), 
-        gps_lon: parseFloat(gps_lon),
-        voice_transcript: voice_transcript || null,
-        raw_photo_url: raw_photo_url || null,
-        created_by_id: created_by_id, 
-        reporter_id: reporter_id || null // <-- NEW: Links the animal lover, or stays null for anonymous tips!
+        initial_media_url,
+        initial_media_is_video: initial_media_is_video || false,
+        pickup_lat,
+        pickup_lon,
+        created_by_id,
+        status: 'PENDING_SHELTER_INTAKE' // It stays pending until the Command Center assigns a cage
       }
     });
 
-    // 4. Send success response back to the app
+    // 3. Send the success signal back to the mobile app
     res.status(201).json({
       status: 'success',
-      message: 'Rescue encounter logged successfully!',
+      message: 'Rescue initiated successfully! Drive safe.',
       data: newEncounter
     });
 
   } catch (error) {
-    console.error("Error creating encounter:", error);
-    res.status(500).json({ 
-      status: 'error', 
-      message: 'Failed to save encounter to the database.',
-      error: error.message
-    });
-  }
-};
-
-
-export const getAllEncounters = async (req, res) => {
-  try {
-    // Tell Prisma to find all encounters
-    const encounters = await prisma.encounter.findMany({
-      orderBy: {
-        created_at: 'desc' // Sort by newest first so the dashboard sees emergencies immediately
-      },
-      include: {
-        // This is the relational magic! It joins the User table automatically.
-        created_by: {
-          select: {
-            name: true,
-            role: true
-          }
-        }
-      }
-    });
-
-    res.status(200).json({
-      status: 'success',
-      results: encounters.length,
-      data: encounters
-    });
-
-  } catch (error) {
-    console.error("Error fetching encounters:", error);
-    res.status(500).json({ 
-      status: 'error', 
-      message: 'Failed to fetch encounters from the database.',
+    console.error("Error starting field encounter:", error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to secure field data.',
       error: error.message
     });
   }

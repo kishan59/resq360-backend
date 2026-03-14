@@ -3,10 +3,10 @@ import { createMedicalLog, getPatientLogs } from '../controllers/medicalLogContr
 
 const router = express.Router();
 
-// POST request to log a new treatment
+// POST: Record a new audio log
 router.post('/', createMedicalLog);
 
-// GET request to pull a specific patient's digital medical card
+// GET: Pull a specific patient's history (e.g., /api/medical-logs/a52365d8...)
 router.get('/:patient_id', getPatientLogs);
 
 export default router;

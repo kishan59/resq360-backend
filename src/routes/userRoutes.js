@@ -1,9 +1,9 @@
 import express from 'express';
-import { createUser } from '../controllers/userController.js'; // Note the .js extension!
+import { createUser } from '../controllers/userController.js';
 
 const router = express.Router();
 
-// When a POST request hits this route, trigger the createUser controller
+// Route: POST /api/users -> Hire a new team member
 router.post('/', createUser);
 
 export default router;

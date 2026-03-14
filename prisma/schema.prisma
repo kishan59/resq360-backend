@@ -1,5 +1,3 @@
-// prisma/schema.prisma
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -8,144 +6,157 @@ datasource db {
   provider = "postgresql"
 }
 
-// --- Enums for strict data validation ---
+// --- ENUMS (Strict Operational Categories) ---
 
 enum Role {
-  ADMIN
-  VET
-  RESCUER
+  OWNER
+  TEAM_MEMBER
 }
 
 enum EncounterStatus {
-  PENDING
+  PENDING_SHELTER_INTAKE
+  TREATED_ON_SITE
   MERGED_TO_PATIENT
-  CLOSED
 }
 
-enum TriageColor {
-  RED       
-  ORANGE    
-  YELLOW    
-  BLUE      
-  GREEN     
+enum CageZone {
+  DANGER
+  MEDIUM
+  MINOR
+  FREE_ROAMING
 }
 
-enum ActionType {
-  MEDICATION
-  DIET
-  SURGERY
-  GENERAL_CARE
-}
-
-// NEW: Tracks if a collar is currently in use or can be recycled
 enum PatientStatus {
-  ACTIVE
+  IN_SHELTER
+  AT_EXTERNAL_VET
   RELEASED
   DECEASED
 }
 
-// --- Core Models ---
-
-model User {
-  id             String         @id @default(uuid())
-  name           String
-  role           Role           @default(RESCUER)
-  biometric_hash String?        
-  auth_token     String?
-  
-  encounters     Encounter[]    @relation("EncounterCreator")
-  medical_logs   MedicalLog[]   @relation("LogAdministeredBy")
-  
-  created_at     DateTime       @default(now())
-  updated_at     DateTime       @updatedAt
+enum VetTripStatus {
+  PENDING_APPROVAL
+  APPROVED
+  COMPLETED
 }
 
-// NEW: The "Good Samaritan" / Community Tracker
+// --- MODELS ---
+
+model User {
+  id                 String             @id @default(uuid())
+  name               String
+  role               Role               @default(TEAM_MEMBER)
+  
+  encounters         Encounter[]        
+  medical_logs       MedicalLog[]       
+  inventory_arrivals InventoryArrival[] 
+  vet_trips          VetTrip[]          @relation("RequestedBy")
+  
+  created_at         DateTime           @default(now())
+}
+
 model Reporter {
-  id                     String      @id @default(uuid())
-  name                   String?     // Nullable so anonymous callers stay private
-  phone_number           String?
-  is_anonymous           Boolean     @default(false)
-  total_rescues_reported Int         @default(0) // Great metric for NGO outreach!
+  id           String      @id @default(uuid())
+  name         String?
+  phone_number String?
+  is_anonymous Boolean     @default(false)
   
-  encounters             Encounter[] // Links this reporter to all animals they found
+  encounters   Encounter[] 
   
-  created_at             DateTime    @default(now())
-  updated_at             DateTime    @updatedAt
+  created_at   DateTime    @default(now())
 }
 
 model Encounter {
-  id               String          @id @default(uuid())
-  temp_status      EncounterStatus @default(PENDING)
-  gps_lat          Float           
-  gps_lon          Float
-  voice_transcript String?         @db.Text
-  raw_photo_url    String?
+  id                     String          @id @default(uuid())
+  status                 EncounterStatus @default(PENDING_SHELTER_INTAKE)
   
-  // The Rescuer who picked up the animal
-  created_by_id    String
-  created_by       User            @relation("EncounterCreator", fields: [created_by_id], references: [id])
+  // FIRST ACTIONS ON SCENE
+  initial_media_url      String          // The photo/video taken from a safe distance
+  initial_media_is_video Boolean         @default(false)
+  pickup_lat             Float           // Captured exactly when the media is taken
+  pickup_lon             Float
   
-  // NEW: The Community Member who called it in (Optional)
-  reporter_id      String?
-  reporter         Reporter?       @relation(fields: [reporter_id], references: [id])
+  // SECONDARY ACTIONS
+  initial_audio_url      String?         // The voice-to-text / raw audio log
+  qr_code_id             String?         @unique // Attempted ONLY if animal is calm enough
   
-  patient_id       String?         
-  patient          Patient?        @relation(fields: [patient_id], references: [id])
+  created_by_id          String
+  created_by             User            @relation(fields: [created_by_id], references: [id])
   
-  created_at       DateTime        @default(now())
+  reporter_id            String?
+  reporter               Reporter?       @relation(fields: [reporter_id], references: [id])
+  
+  patient                Patient?        // Linked if brought to the shelter
+  
+  created_at             DateTime        @default(now())
 }
 
 model Patient {
-  id               String         @id @default(uuid())
-  qr_code_id       String?        @unique
-  species          String?
-  breed            String?
-  color            String?
-  triage_color     TriageColor    @default(GREEN)
-  assigned_cage_id String?
-  status           PatientStatus  @default(ACTIVE) // NEW: Controls the QR lifecycle
+  id            String        @id @default(uuid())
+  qr_code_id    String?       @unique // Inherited from Encounter, OR scanned safely in cage
+  temperament   String?       // e.g., "Violent", "Calm"
+  cage_zone     CageZone?
+  status        PatientStatus @default(IN_SHELTER)
   
-  encounters       Encounter[]
-  medical_logs     MedicalLog[]
-  task_schedules   TaskSchedule[]
+  encounter_id  String        @unique
+  encounter     Encounter     @relation(fields: [encounter_id], references: [id])
   
-  created_at       DateTime       @default(now())
-  updated_at       DateTime       @updatedAt
+  medical_logs  MedicalLog[]
+  vet_trips     VetTrip[]
+  media         PatientMedia[]
+  
+  created_at    DateTime      @default(now())
+  updated_at    DateTime      @updatedAt
+}
+
+model PatientMedia {
+  id         String   @id @default(uuid())
+  patient_id String
+  patient    Patient  @relation(fields: [patient_id], references: [id])
+  
+  media_url  String
+  is_video   Boolean  @default(false)
+  
+  created_at DateTime @default(now())
 }
 
 model MedicalLog {
-  id               String      @id @default(uuid())
-  action_type      ActionType
-  notes            String?     @db.Text 
-  
+  id               String   @id @default(uuid())
   patient_id       String
-  patient          Patient     @relation(fields: [patient_id], references: [id])
+  patient          Patient  @relation(fields: [patient_id], references: [id])
   
-  administered_by  String
-  user             User        @relation("LogAdministeredBy", fields: [administered_by], references: [id])
+  logged_by_id     String
+  user             User     @relation(fields: [logged_by_id], references: [id])
   
-  timestamp        DateTime    @default(now())
+  audio_log_url    String   // The primary data point for employees
+  text_translation String?  @db.Text // Optional SaaS toggle feature
+  is_vet_update    Boolean  @default(false) // Was this recorded at an external hospital?
+  
+  created_at       DateTime @default(now())
 }
 
-model TaskSchedule {
-  id               String      @id @default(uuid())
-  task_description String
-  frequency        String      
-  next_due_date    DateTime
-  
+model VetTrip {
+  id               String        @id @default(uuid())
   patient_id       String
-  patient          Patient     @relation(fields: [patient_id], references: [id])
+  patient          Patient       @relation(fields: [patient_id], references: [id])
   
-  created_at       DateTime    @default(now())
+  requested_by_id  String
+  requester        User          @relation("RequestedBy", fields: [requested_by_id], references: [id])
+  
+  status           VetTripStatus @default(PENDING_APPROVAL)
+  scheduled_date   DateTime?
+  
+  created_at       DateTime      @default(now())
+  updated_at       DateTime      @updatedAt
 }
 
-model Inventory {
-  item_id          String      @id @default(uuid())
-  name             String
-  category         String      
-  current_stock    Int         @default(0)
-  cost_per_unit    Float       @default(0.0)
+model InventoryArrival {
+  id            String   @id @default(uuid())
+  item_name     String
+  quantity      Int
+  unit_type     String?  // e.g., "boxes", "bottles"
   
-  updated_at       DateTime    @updatedAt
+  logged_by_id  String
+  user          User     @relation(fields: [logged_by_id], references: [id])
+  
+  arrived_at    DateTime @default(now())
 }

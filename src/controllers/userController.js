@@ -1,31 +1,29 @@
-import { prisma } from '../config/db.js'; // Import your global database connection
+import { prisma } from '../config/db.js';
 
-// We export this specific function so the route can use it
+// POST: Create a new NGO staff member (Owner or Team Member)
 export const createUser = async (req, res) => {
   try {
-    // 1. Grab the data sent from the mobile app/postman
     const { name, role } = req.body;
 
-    // 2. Simple validation: Make sure they actually sent a name
+    // Strict Validation: Every user must have a name
     if (!name) {
       return res.status(400).json({ 
         status: 'error', 
-        message: 'Name is required to create a user.' 
+        message: 'Name is strictly required to create a staff profile.' 
       });
     }
 
-    // 3. Tell Prisma to insert a new row into the User table
     const newUser = await prisma.user.create({
       data: {
         name: name,
-        role: role || 'RESCUER' // If no role is sent, default to RESCUER
+        // If they don't specify a role, default them to the field team
+        role: role || 'TEAM_MEMBER' 
       }
     });
 
-    // 4. Send the newly created user back to the screen
     res.status(201).json({
       status: 'success',
-      message: 'User created successfully!',
+      message: 'Staff profile created successfully!',
       data: newUser
     });
 
@@ -33,7 +31,7 @@ export const createUser = async (req, res) => {
     console.error("Error creating user:", error);
     res.status(500).json({ 
       status: 'error', 
-      message: 'Failed to create user in the database.',
+      message: 'Failed to create staff profile.',
       error: error.message
     });
   }

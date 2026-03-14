@@ -1,30 +1,31 @@
 import { prisma } from '../config/db.js';
 
-// 1. Log a new medical treatment
+// 1. POST: Save a new daily audio log
 export const createMedicalLog = async (req, res) => {
   try {
-    const { action_type, notes, patient_id, administered_by } = req.body;
+    const { patient_id, logged_by_id, audio_log_url, text_translation, is_vet_update } = req.body;
 
-    // Strict Validation: We need to know WHAT was done, TO WHOM, and BY WHOM.
-    if (!action_type || !patient_id || !administered_by) {
+    // Strict Validation: We absolutely need to know who is logging it, for which dog, and the audio file.
+    if (!patient_id || !logged_by_id || !audio_log_url) {
       return res.status(400).json({ 
         status: 'error', 
-        message: 'Action type, patient ID, and the administering user ID are strictly required.' 
+        message: 'Patient ID, User ID, and the Audio Log URL are strictly required.' 
       });
     }
 
     const newLog = await prisma.medicalLog.create({
       data: {
-        action_type: action_type, // Must match your Enum (MEDICATION, DIET, SURGERY, GENERAL_CARE)
-        notes: notes || null,
-        patient_id: patient_id,
-        administered_by: administered_by
+        patient_id,
+        logged_by_id,
+        audio_log_url,
+        text_translation: text_translation || null, // For when the AI background job kicks in
+        is_vet_update: is_vet_update || false
       }
     });
 
     res.status(201).json({
       status: 'success',
-      message: 'Medical treatment logged successfully!',
+      message: 'Audio treatment log saved successfully!',
       data: newLog
     });
 
@@ -38,26 +39,18 @@ export const createMedicalLog = async (req, res) => {
   }
 };
 
-// 2. Fetch the complete medical history for a specific patient
+// 2. GET: Fetch the complete history for the Digital Patient Card
 export const getPatientLogs = async (req, res) => {
   try {
-    // We grab the patient ID from the URL itself (e.g., /api/medical-logs/12345)
     const { patient_id } = req.params;
 
     const logs = await prisma.medicalLog.findMany({
-      where: { 
-        patient_id: patient_id 
-      },
-      orderBy: { 
-        timestamp: 'desc' // Newest treatments at the top
-      },
+      where: { patient_id },
+      orderBy: { created_at: 'desc' }, // Newest audio logs at the top
       include: {
-        // Pull in the details of the Vet/User who did the treatment
+        // Automatically attach the name of the team member who recorded it
         user: {
-          select: {
-            name: true,
-            role: true
-          }
+          select: { name: true, role: true }
         }
       }
     });

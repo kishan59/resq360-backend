@@ -1,6 +1,6 @@
-// index.js
 import express from 'express';
 import dotenv from 'dotenv';
+import { prisma } from './src/config/db.js';
 
 import userRoutes from './src/routes/userRoutes.js';
 import encounterRoutes from './src/routes/encounterRoutes.js';
@@ -12,7 +12,11 @@ dotenv.config();
 const app = express();
 app.use(express.json());
 
-// all the user-related routes will be here
+// Simple Health Check
+app.get('/api/health', (req, res) => {
+  res.status(200).json({ status: 'success', message: 'ResQ360 API V2 is online and ready!' });
+});
+
 app.use('/api/users', userRoutes);
 app.use('/api/encounters', encounterRoutes);
 app.use('/api/patients', patientRoutes);
@@ -21,5 +25,5 @@ app.use('/api/medical-logs', medicalLogRoutes);
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
-  console.log(`🚀 ResQ360 Server is running on http://localhost:${PORT}`);
+  console.log(`🚀 ResQ360 Server V2 is running on http://localhost:${PORT}`);
 });

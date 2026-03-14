@@ -3,7 +3,7 @@ import { convertEncounterToPatient } from '../controllers/patientController.js';
 
 const router = express.Router();
 
-// POST request to convert an encounter into a patient
-router.post('/convert', convertEncounterToPatient);
+// Route: POST /api/patients -> Process shelter intake
+router.post('/', convertEncounterToPatient);
 
 export default router;
