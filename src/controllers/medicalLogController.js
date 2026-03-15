@@ -3,14 +3,13 @@ import { prisma } from '../config/db.js';
 // 1. POST: Save a new daily audio log
 export const createMedicalLog = async (req, res) => {
   try {
-    const { patient_id, logged_by_id, audio_log_url, text_translation, is_vet_update } = req.body;
+    const { patient_id, audio_log_url, text_translation, is_vet_update } = req.body;
+    
+    // MAGIC: Pull from token
+    const logged_by_id = req.user.id; 
 
-    // Strict Validation: We absolutely need to know who is logging it, for which dog, and the audio file.
-    if (!patient_id || !logged_by_id || !audio_log_url) {
-      return res.status(400).json({ 
-        status: 'error', 
-        message: 'Patient ID, User ID, and the Audio Log URL are strictly required.' 
-      });
+    if (!patient_id || !audio_log_url) {
+      return res.status(400).json({ status: 'error', message: 'Patient ID and Audio Log URL are required.' });
     }
 
     const newLog = await prisma.medicalLog.create({

@@ -7,15 +7,17 @@ export const createEncounter = async (req, res) => {
       initial_media_url,
       initial_media_is_video,
       pickup_lat,
-      pickup_lon,
-      created_by_id // Passed from the mobile app (eventually from a secure JWT)
-    } = req.body;
+      pickup_lon
+    } = req.body; 
+
+    // THE MAGIC: We pull the user ID directly from the verified token! No one can fake this.
+    const created_by_id = req.user.id;
 
     // 1. Strict Validation: We absolutely cannot proceed without the photo, GPS, or Employee ID.
-    if (!initial_media_url || pickup_lat === undefined || pickup_lon === undefined || !created_by_id) {
+    if (!initial_media_url || pickup_lat === undefined || pickup_lon === undefined) {
       return res.status(400).json({
         status: 'error',
-        message: 'Missing required field data. Media URL, GPS coordinates, and Employee ID are strictly required.'
+        message: 'Missing required field data. Media URL and GPS coordinates are strictly required.'
       });
     }
 
@@ -40,10 +42,6 @@ export const createEncounter = async (req, res) => {
 
   } catch (error) {
     console.error("Error starting field encounter:", error);
-    res.status(500).json({
-      status: 'error',
-      message: 'Failed to secure field data.',
-      error: error.message
-    });
+    res.status(500).json({ status: 'error', message: 'Failed to secure field data.', error: error.message });
   }
 };

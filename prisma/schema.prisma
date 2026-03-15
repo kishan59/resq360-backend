@@ -44,6 +44,8 @@ enum VetTripStatus {
 model User {
   id                 String             @id @default(uuid())
   name               String
+  phone_number       String             @unique // NEW: For logging in
+  password           String             // NEW: We will hash this securely
   role               Role               @default(TEAM_MEMBER)
   
   encounters         Encounter[]        
