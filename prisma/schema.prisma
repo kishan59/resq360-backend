@@ -162,3 +162,11 @@ model InventoryArrival {
   
   arrived_at    DateTime @default(now())
 }
+
+// The Admin's Master Switchboard
+model AppSettings {
+  id                  Int      @id @default(1) // We only ever need one row of settings
+  input_level         Int      @default(1) 
+  allow_video_uploads Boolean  @default(false) // Admin turns this on when they buy storage
+  updated_at          DateTime @updatedAt
+}
