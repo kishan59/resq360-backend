@@ -9,6 +9,7 @@ import medicalLogRoutes from './src/routes/medicalLogRoutes.js';
 import vetTripRoutes from './src/routes/vetTripRoutes.js';
 import inventoryRoutes from './src/routes/inventoryRoutes.js';
 import settingsRoutes from './src/routes/settingsRoutes.js';
+import uploadRoutes from './src/routes/uploadRoutes.js';
 
 dotenv.config();
 
@@ -27,6 +28,7 @@ app.use('/api/medical-logs', medicalLogRoutes);
 app.use('/api/vet-trips', vetTripRoutes);
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/upload', uploadRoutes);
 
 const PORT = process.env.PORT || 5000;
 
