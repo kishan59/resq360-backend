@@ -1,4 +1,4 @@
-# ResQ360 - Core API Server (V2)
+# ResQ360 - Core API Server
 
 The centralized backend for the ResQ360 animal rescue ecosystem. Built to handle offline-first syncing from the mobile app, secure role-based access control, and $0-budget cloud media storage for street triage.
 
