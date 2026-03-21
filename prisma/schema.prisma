@@ -74,6 +74,7 @@ model Encounter {
   // FIRST ACTIONS ON SCENE
   initial_media_url      String          // The photo/video taken from a safe distance
   initial_media_is_video Boolean         @default(false)
+  audio_url              String?
   pickup_lat             Float           // Captured exactly when the media is taken
   pickup_lon             Float
   

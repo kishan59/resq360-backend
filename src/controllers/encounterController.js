@@ -6,15 +6,16 @@ export const createEncounter = async (req, res) => {
     const {
       initial_media_url,
       initial_media_is_video,
+      audio_url,        // 🚨 1. DESTRUCTURE THE NEW AUDIO URL
       pickup_lat,
       pickup_lon,
-      reporter_name,  // NEW: John types this in the field
-      reporter_phone  // NEW: John types this in the field
+      reporter_name,  
+      reporter_phone  
     } = req.body; 
 
-    // The Bouncer verifies John is the one making the request
     const created_by_id = req.user.id; 
 
+    // We still only strictly require the photo and GPS to start
     if (!initial_media_url || pickup_lat === undefined || pickup_lon === undefined) {
       return res.status(400).json({
         status: 'error',
@@ -22,31 +23,24 @@ export const createEncounter = async (req, res) => {
       });
     }
 
-    // 🚀 Prisma Transaction: Handle the Reporter silently, then create the Encounter
     const newEncounter = await prisma.$transaction(async (tx) => {
       let finalReporterId = null;
 
-      // 1. THE SILENT DIRECTORY: If John entered a phone number for the Good Samaritan
       if (reporter_phone) {
-        // Check if we already have this caller in our database
         let reporterRecord = await tx.reporter.findFirst({
           where: { phone_number: reporter_phone }
         });
-
-        // If not, silently add them to the directory
         if (!reporterRecord) {
           reporterRecord = await tx.reporter.create({
             data: {
-              name: reporter_name || null, // Name is optional
+              name: reporter_name || null, 
               phone_number: reporter_phone,
               is_anonymous: false
             }
           });
         }
         finalReporterId = reporterRecord.id;
-      } 
-      // Edge case: John got a name but no phone number
-      else if (reporter_name) {
+      } else if (reporter_name) {
          let reporterRecord = await tx.reporter.create({
             data: {
               name: reporter_name,
@@ -56,15 +50,15 @@ export const createEncounter = async (req, res) => {
           finalReporterId = reporterRecord.id;
       }
 
-      // 2. THE DISPATCH: Create the actual Encounter
       return await tx.encounter.create({
         data: {
           initial_media_url,
           initial_media_is_video: initial_media_is_video || false,
+          audio_url,             // 🚨 2. SAVE IT TO THE DATABASE
           pickup_lat,
           pickup_lon,
-          created_by_id,               // Linked to John
-          reporter_id: finalReporterId, // Linked to the Good Samaritan (if provided)
+          created_by_id,         
+          reporter_id: finalReporterId, 
           status: 'PENDING_SHELTER_INTAKE'
         }
       });
