@@ -26,6 +26,11 @@ enum CageZone {
   FREE_ROAMING
 }
 
+enum Temperament {
+  CALM
+  VIOLENT
+}
+
 enum PatientStatus {
   IN_SHELTER
   AT_EXTERNAL_VET
@@ -52,19 +57,23 @@ model User {
   medical_logs       MedicalLog[]       
   inventory_arrivals InventoryArrival[] 
   vet_trips          VetTrip[]          @relation("RequestedBy")
+  audit_logs         AuditLog[]         @relation("AuditActor")
   
   created_at         DateTime           @default(now())
+  updated_at         DateTime           @updatedAt
 }
 
 model Reporter {
   id           String      @id @default(uuid())
   name         String?
   phone_number String?
+  phone_e164   String?     @unique
   is_anonymous Boolean     @default(false)
   
   encounters   Encounter[] 
   
   created_at   DateTime    @default(now())
+  updated_at   DateTime    @updatedAt
 }
 
 model Encounter {
@@ -74,13 +83,14 @@ model Encounter {
   // FIRST ACTIONS ON SCENE
   initial_media_url      String          // The photo/video taken from a safe distance
   initial_media_is_video Boolean         @default(false)
-  audio_url              String?
   pickup_lat             Float           // Captured exactly when the media is taken
   pickup_lon             Float
+  pickup_accuracy_m      Float?
+  pickup_captured_at     DateTime?
   
   // SECONDARY ACTIONS
   initial_audio_url      String?         // The voice-to-text / raw audio log
-  qr_code_id             String?         @unique // Attempted ONLY if animal is calm enough
+  qr_code_id             String?         // Attempted ONLY if animal is calm enough
   
   created_by_id          String
   created_by             User            @relation(fields: [created_by_id], references: [id])
@@ -91,12 +101,14 @@ model Encounter {
   patient                Patient?        // Linked if brought to the shelter
   
   created_at             DateTime        @default(now())
+  updated_at             DateTime        @updatedAt
+  deleted_at             DateTime?
 }
 
 model Patient {
   id            String        @id @default(uuid())
   qr_code_id    String?       @unique // Inherited from Encounter, OR scanned safely in cage
-  temperament   String?       // e.g., "Violent", "Calm"
+  temperament   Temperament?
   cage_zone     CageZone?
   status        PatientStatus @default(IN_SHELTER)
   
@@ -109,6 +121,7 @@ model Patient {
   
   created_at    DateTime      @default(now())
   updated_at    DateTime      @updatedAt
+  deleted_at    DateTime?
 }
 
 model PatientMedia {
@@ -120,6 +133,7 @@ model PatientMedia {
   is_video   Boolean  @default(false)
   
   created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
 }
 
 model MedicalLog {
@@ -135,6 +149,8 @@ model MedicalLog {
   is_vet_update    Boolean  @default(false) // Was this recorded at an external hospital?
   
   created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+  deleted_at       DateTime?
 }
 
 model VetTrip {
@@ -162,6 +178,7 @@ model InventoryArrival {
   user          User     @relation(fields: [logged_by_id], references: [id])
   
   arrived_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
 }
 
 // The Admin's Master Switchboard
@@ -170,4 +187,31 @@ model AppSettings {
   input_level         Int      @default(1) 
   allow_video_uploads Boolean  @default(false) // Admin turns this on when they buy storage
   updated_at          DateTime @updatedAt
+}
+
+model SyncMutation {
+  id                 String   @id @default(uuid())
+  client_mutation_id String   @unique
+  device_id          String
+  entity_type        String
+  entity_id          String?
+  operation          String
+  status             String
+  resolution         String?
+  conflict_fields    Json?
+  response_json      Json?
+  created_at         DateTime @default(now())
+  updated_at         DateTime @updatedAt
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  actor_id    String?
+  actor       User?    @relation("AuditActor", fields: [actor_id], references: [id])
+  entity_type String
+  entity_id   String
+  action      String
+  before_json Json?
+  after_json  Json?
+  created_at  DateTime @default(now())
 }

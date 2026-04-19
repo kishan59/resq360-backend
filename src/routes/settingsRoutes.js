@@ -4,10 +4,10 @@ import { protect, restrictTo } from '../middlewares/authMiddleware.js';
 
 const router = express.Router();
 
-// ANY logged-in field worker needs to read this so their app can configure itself
+// Read current runtime feature settings.
 router.get('/', protect, getAppSettings);
 
-// ONLY the Admin can change these settings (The Kill Switch)
+// Only OWNER can change global settings.
 router.patch('/', protect, restrictTo('OWNER'), updateAppSettings);
 
 export default router;

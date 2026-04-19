@@ -1,8 +1,8 @@
 import { prisma } from '../config/db.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { getJwtSecret } from '../utils/auth.js';
 
-// 1. ADMIN REGISTRATION: Shelter Owner creates a new staff profile
 export const createUser = async (req, res) => {
   try {
     const { name, phone_number, password, role } = req.body;
@@ -14,13 +14,11 @@ export const createUser = async (req, res) => {
       });
     }
 
-    // Check if phone number already exists
     const existingUser = await prisma.user.findUnique({ where: { phone_number } });
     if (existingUser) {
       return res.status(400).json({ status: 'error', message: 'This phone number is already registered to a staff member.' });
     }
 
-    // Hash the password securely before saving
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
@@ -28,7 +26,7 @@ export const createUser = async (req, res) => {
       data: {
         name,
         phone_number,
-        password: hashedPassword, // NEVER save plain text passwords!
+        password: hashedPassword,
         role: role || 'TEAM_MEMBER' 
       }
     });
@@ -36,7 +34,7 @@ export const createUser = async (req, res) => {
     res.status(201).json({
       status: 'success',
       message: 'Staff profile created successfully!',
-      data: { id: newUser.id, name: newUser.name, role: newUser.role } // Notice we don't send the password back!
+      data: { id: newUser.id, name: newUser.name, role: newUser.role }
     });
 
   } catch (error) {
@@ -45,7 +43,6 @@ export const createUser = async (req, res) => {
   }
 };
 
-// 2. STAFF LOGIN: Mobile app requests a secure token
 export const loginUser = async (req, res) => {
   try {
     const { phone_number, password } = req.body;
@@ -54,24 +51,22 @@ export const loginUser = async (req, res) => {
       return res.status(400).json({ status: 'error', message: 'Phone number and password are required.' });
     }
 
-    // Find the user by phone number
     const user = await prisma.user.findUnique({ where: { phone_number } });
     if (!user) {
       return res.status(401).json({ status: 'error', message: 'Invalid credentials.' });
     }
 
-    // Compare the typed password with the hashed password in the database
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(401).json({ status: 'error', message: 'Invalid credentials.' });
     }
 
-    // Generate the JWT Token (The digital VIP pass)
-    // It contains the user's ID and Role, signed with a secret key
+    const jwtSecret = getJwtSecret();
+
     const token = jwt.sign(
       { id: user.id, role: user.role },
-      process.env.JWT_SECRET || 'super_secret_fallback_key', // We will add a real secret to .env soon
-      { expiresIn: '30d' } // Token lasts for 30 days so field workers don't have to log in every 5 minutes
+      jwtSecret,
+      { expiresIn: '12h' }
     );
 
     res.status(200).json({
@@ -84,5 +79,30 @@ export const loginUser = async (req, res) => {
   } catch (error) {
     console.error("Error logging in:", error);
     res.status(500).json({ status: 'error', message: 'Login failed.' });
+  }
+};
+
+export const getMe = async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: {
+        id: true,
+        name: true,
+        phone_number: true,
+        role: true,
+        created_at: true,
+        updated_at: true
+      }
+    });
+
+    if (!user) {
+      return res.status(404).json({ status: 'error', message: 'User not found.' });
+    }
+
+    res.status(200).json({ status: 'success', data: user });
+  } catch (error) {
+    console.error('Error fetching profile:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to fetch user profile.' });
   }
 };

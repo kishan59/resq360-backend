@@ -1,12 +1,36 @@
 import { prisma } from '../config/db.js';
+import { writeAuditLog } from '../utils/audit.js';
+import {
+  extractSyncMeta,
+  validateSyncMeta,
+  getExistingSyncMutation,
+  createSyncResponse,
+  saveSyncMutation,
+  hasVersionConflict,
+  buildConflictResponse
+} from '../utils/sync.js';
 
-// 1. POST: Field Team requests a vet trip for a dog
+const ALLOWED_VET_TRANSITIONS = {
+  PENDING_APPROVAL: new Set(['APPROVED']),
+  APPROVED: new Set(['COMPLETED']),
+  COMPLETED: new Set([])
+};
+
 export const requestVetTrip = async (req, res) => {
   try {
     const { patient_id } = req.body;
-    
-    // MAGIC: Pull from token
-    const requested_by_id = req.user.id; 
+    const requested_by_id = req.user.id;
+
+    const syncMeta = extractSyncMeta(req.body);
+    const syncError = validateSyncMeta(syncMeta);
+    if (syncError) {
+      return res.status(400).json({ status: 'error', message: syncError });
+    }
+
+    const existingMutation = await getExistingSyncMutation(syncMeta.clientMutationId);
+    if (existingMutation?.response_json) {
+      return res.status(200).json(existingMutation.response_json);
+    }
 
     if (!patient_id) {
       return res.status(400).json({ status: 'error', message: 'Patient ID is required.' });
@@ -14,16 +38,33 @@ export const requestVetTrip = async (req, res) => {
 
     const newTrip = await prisma.vetTrip.create({
       data: {
-        patient_id: patient_id,
-        requested_by_id: requested_by_id,
-        status: 'PENDING_APPROVAL' // Automatically defaults to pending
+        patient_id,
+        requested_by_id,
+        status: 'PENDING_APPROVAL'
       }
+    });
+
+    const responsePayload = createSyncResponse({
+      status: 'applied',
+      entityId: newTrip.id,
+      serverVersion: newTrip.updated_at.toISOString(),
+      data: newTrip,
+      message: 'Vet trip requested. Awaiting Command Center approval.'
+    });
+
+    await saveSyncMutation({
+      clientMutationId: syncMeta.clientMutationId,
+      deviceId: syncMeta.deviceId,
+      entityType: 'VetTrip',
+      entityId: newTrip.id,
+      operation: 'create',
+      status: 'applied',
+      responseJson: responsePayload
     });
 
     res.status(201).json({
       status: 'success',
-      message: 'Vet trip requested. Awaiting Command Center approval.',
-      data: newTrip
+      ...responsePayload
     });
 
   } catch (error) {
@@ -36,33 +77,91 @@ export const requestVetTrip = async (req, res) => {
   }
 };
 
-// 2. PATCH: Command Center Owner approves it and sets a date
 export const updateVetTripStatus = async (req, res) => {
   try {
-    const { id } = req.params; // The ID of the Vet Trip itself
+    const { id } = req.params;
     const { status, scheduled_date } = req.body;
 
-    // We only allow specific statuses based on our Prisma Enum
-    if (!['PENDING_APPROVAL', 'APPROVED', 'COMPLETED'].includes(status)) {
+    const syncMeta = extractSyncMeta(req.body);
+    const syncError = validateSyncMeta(syncMeta);
+    if (syncError) {
+      return res.status(400).json({ status: 'error', message: syncError });
+    }
+
+    const existingMutation = await getExistingSyncMutation(syncMeta.clientMutationId);
+    if (existingMutation?.response_json) {
+      return res.status(200).json(existingMutation.response_json);
+    }
+
+    if (!['APPROVED', 'COMPLETED'].includes(status)) {
       return res.status(400).json({ 
         status: 'error', 
-        message: 'Invalid status. Must be PENDING_APPROVAL, APPROVED, or COMPLETED.' 
+        message: 'Invalid status. Must be APPROVED or COMPLETED.' 
+      });
+    }
+
+    const existingTrip = await prisma.vetTrip.findUnique({ where: { id } });
+    if (!existingTrip) {
+      return res.status(404).json({ status: 'error', message: 'Vet trip not found.' });
+    }
+
+    if (hasVersionConflict(existingTrip, syncMeta.baseVersion)) {
+      return res.status(409).json({ status: 'error', ...buildConflictResponse({ entity: existingTrip, changedFields: syncMeta.changedFields }) });
+    }
+
+    const allowedNext = ALLOWED_VET_TRANSITIONS[existingTrip.status] || new Set();
+    if (!allowedNext.has(status)) {
+      return res.status(400).json({
+        status: 'error',
+        message: `Invalid status transition from ${existingTrip.status} to ${status}.`
+      });
+    }
+
+    if (status === 'APPROVED' && !scheduled_date) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'scheduled_date is required when approving a vet trip.'
       });
     }
 
     const updatedTrip = await prisma.vetTrip.update({
-      where: { id: id },
+      where: { id },
       data: { 
-        status: status,
-        // If they provided a date, format it. Otherwise, leave it alone.
+        status,
         scheduled_date: scheduled_date ? new Date(scheduled_date) : undefined
       }
     });
 
+    await writeAuditLog({
+      actorId: req.user.id,
+      entityType: 'VetTrip',
+      entityId: id,
+      action: 'UPDATE_VET_TRIP_STATUS',
+      beforeJson: existingTrip,
+      afterJson: updatedTrip
+    });
+
+    const responsePayload = createSyncResponse({
+      status: 'applied',
+      entityId: updatedTrip.id,
+      serverVersion: updatedTrip.updated_at.toISOString(),
+      data: updatedTrip,
+      message: `Vet trip marked as ${status}.`
+    });
+
+    await saveSyncMutation({
+      clientMutationId: syncMeta.clientMutationId,
+      deviceId: syncMeta.deviceId,
+      entityType: 'VetTrip',
+      entityId: updatedTrip.id,
+      operation: 'update',
+      status: 'applied',
+      responseJson: responsePayload
+    });
+
     res.status(200).json({
       status: 'success',
-      message: `Vet trip marked as ${status}.`,
-      data: updatedTrip
+      ...responsePayload
     });
 
   } catch (error) {
@@ -75,7 +174,6 @@ export const updateVetTripStatus = async (req, res) => {
   }
 };
 
-// 3. GET: Fetch all Approved trips so the team knows who to take to the hospital today
 export const getApprovedTrips = async (req, res) => {
   try {
     const trips = await prisma.vetTrip.findMany({
@@ -83,14 +181,12 @@ export const getApprovedTrips = async (req, res) => {
         status: 'APPROVED' 
       },
       orderBy: { 
-        scheduled_date: 'asc' // Sort by date so the soonest trips are at the top
+        scheduled_date: 'asc'
       },
       include: {
-        // Pull in the Patient's QR code and Cage Zone so the team can actually find the dog!
         patient: {
           select: { qr_code_id: true, cage_zone: true }
         },
-        // Pull in the name of the person who originally requested it
         requester: {
           select: { name: true }
         }
@@ -111,4 +207,14 @@ export const getApprovedTrips = async (req, res) => {
       error: error.message
     });
   }
+};
+
+export const approveVetTrip = async (req, res) => {
+  req.body.status = 'APPROVED';
+  return updateVetTripStatus(req, res);
+};
+
+export const completeVetTrip = async (req, res) => {
+  req.body.status = 'COMPLETED';
+  return updateVetTripStatus(req, res);
 };

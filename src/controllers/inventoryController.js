@@ -1,31 +1,67 @@
 import { prisma } from '../config/db.js';
+import {
+  extractSyncMeta,
+  validateSyncMeta,
+  getExistingSyncMutation,
+  createSyncResponse,
+  saveSyncMutation
+} from '../utils/sync.js';
 
-// 1. POST: Log a new shipment of supplies
 export const logInventoryArrival = async (req, res) => {
   try {
     const { item_name, quantity, unit_type } = req.body;
-    
-    // MAGIC: Pull from token
-    const logged_by_id = req.user.id; 
+    const logged_by_id = req.user.id;
+
+    const syncMeta = extractSyncMeta(req.body);
+    const syncError = validateSyncMeta(syncMeta);
+    if (syncError) {
+      return res.status(400).json({ status: 'error', message: syncError });
+    }
+
+    const existingMutation = await getExistingSyncMutation(syncMeta.clientMutationId);
+    if (existingMutation?.response_json) {
+      return res.status(200).json(existingMutation.response_json);
+    }
 
     if (!item_name || quantity === undefined) {
       return res.status(400).json({ status: 'error', message: 'Item name and quantity are required.' });
     }
 
+    const parsedQuantity = Number.parseInt(quantity, 10);
+    if (!Number.isInteger(parsedQuantity) || parsedQuantity <= 0) {
+      return res.status(400).json({ status: 'error', message: 'Quantity must be a positive integer.' });
+    }
+
     const newStock = await prisma.inventoryArrival.create({
       data: {
         item_name,
-        // Ensure quantity is saved as an integer, just in case a string slips through
-        quantity: parseInt(quantity, 10), 
+        quantity: parsedQuantity,
         unit_type: unit_type || null,
         logged_by_id
       }
     });
 
+    const responsePayload = createSyncResponse({
+      status: 'applied',
+      entityId: newStock.id,
+      serverVersion: newStock.updated_at.toISOString(),
+      data: newStock,
+      message: `${parsedQuantity} ${unit_type || 'units'} of ${item_name} logged successfully.`
+    });
+
+    await saveSyncMutation({
+      clientMutationId: syncMeta.clientMutationId,
+      deviceId: syncMeta.deviceId,
+      entityType: 'InventoryArrival',
+      entityId: newStock.id,
+      operation: 'create',
+      status: 'applied',
+      responseJson: responsePayload
+    });
+
     res.status(201).json({
       status: 'success',
-      message: `${quantity} ${unit_type || 'units'} of ${item_name} logged successfully!`,
-      data: newStock
+      ...responsePayload
     });
 
   } catch (error) {
@@ -38,16 +74,15 @@ export const logInventoryArrival = async (req, res) => {
   }
 };
 
-// 2. GET: Pull the inventory ledger for the Command Center
 export const getInventoryArrivals = async (req, res) => {
   try {
     const arrivals = await prisma.inventoryArrival.findMany({
       orderBy: { 
-        arrived_at: 'desc' // Most recent shipments at the top
+        arrived_at: 'desc'
       },
       include: {
         user: {
-          select: { name: true } // Who signed for the delivery?
+          select: { name: true }
         }
       }
     });
