@@ -42,7 +42,22 @@ export const convertEncounterToPatient = async (req, res) => {
       });
     }
 
-    if (!ALLOWED_CAGE_ZONES.has(cage_zone)) {
+    // Verify encounter exists and is not already merged
+    const existingEncounter = await prisma.encounter.findUnique({ where: { id: encounter_id } });
+    if (!existingEncounter) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Encounter not found. Cannot convert to patient.'
+      });
+    }
+    if (existingEncounter.status === 'MERGED_TO_PATIENT') {
+      return res.status(400).json({
+        status: 'error',
+        message: 'This encounter has already been converted to a patient.'
+      });
+    }
+
+    if (cage_zone && !ALLOWED_CAGE_ZONES.has(cage_zone)) {
       return res.status(400).json({ status: 'error', message: 'Invalid cage zone value.' });
     }
 
@@ -54,7 +69,7 @@ export const convertEncounterToPatient = async (req, res) => {
       const newPatient = await tx.patient.create({
         data: {
           encounter_id: encounter_id,
-          qr_code_id: qr_code_id || null,
+          qr_code_id: qr_code_id || existingEncounter.qr_code_id || null,
           temperament: temperament || 'CALM',
           cage_zone,
           status: 'IN_SHELTER'

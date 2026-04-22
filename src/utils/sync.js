@@ -82,5 +82,10 @@ export const buildConflictResponse = ({ entity, changedFields = [] }) => {
 
 export const hasVersionConflict = (entity, baseVersion) => {
   if (!baseVersion || !entity?.updated_at) return false;
-  return entity.updated_at.toISOString() !== baseVersion;
+  
+  // Compare timestamps in milliseconds for timezone-safe comparison
+  const serverTs = new Date(entity.updated_at).getTime();
+  const clientTs = new Date(baseVersion).getTime();
+  
+  return serverTs !== clientTs;
 };

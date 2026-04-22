@@ -25,6 +25,7 @@ export const createEncounter = async (req, res) => {
       pickup_captured_at,
       reporter_name,  
       reporter_phone,
+      reporter_is_anonymous,
       qr_code_id
     } = req.body; 
 
@@ -49,7 +50,47 @@ export const createEncounter = async (req, res) => {
       });
     }
 
+    // Validate GPS coordinates are within valid ranges (latitude: -90 to 90, longitude: -180 to 180)
+    if (typeof pickup_lat !== 'number' || pickup_lat < -90 || pickup_lat > 90) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Invalid latitude. Must be between -90 and 90.'
+      });
+    }
+    if (typeof pickup_lon !== 'number' || pickup_lon < -180 || pickup_lon > 180) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Invalid longitude. Must be between -180 and 180.'
+      });
+    }
+
+    // Validate pickup_captured_at is valid date and not in the future
+    if (pickup_captured_at) {
+      const capturedDate = new Date(pickup_captured_at);
+      if (isNaN(capturedDate.getTime())) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'Invalid date format for pickup_captured_at.'
+        });
+      }
+      if (capturedDate > new Date()) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'pickup_captured_at cannot be in the future.'
+        });
+      }
+    }
+
     const normalizedReporterPhone = normalizePhoneNumber(reporter_phone);
+    const isReporterAnonymous = reporter_is_anonymous !== false;
+
+    if (!isReporterAnonymous && !normalizedReporterPhone) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Reporter phone is required for non-anonymous good samaritan records.'
+      });
+    }
+
     if (reporter_phone && !normalizedReporterPhone) {
       return res.status(400).json({
         status: 'error',
@@ -60,7 +101,7 @@ export const createEncounter = async (req, res) => {
     const newEncounter = await prisma.$transaction(async (tx) => {
       let finalReporterId = null;
 
-      if (normalizedReporterPhone) {
+      if (!isReporterAnonymous && normalizedReporterPhone) {
         let reporterRecord = await tx.reporter.findUnique({
           where: { phone_e164: normalizedReporterPhone }
         });
@@ -69,21 +110,18 @@ export const createEncounter = async (req, res) => {
           reporterRecord = await tx.reporter.create({
             data: {
               name: reporter_name || null, 
-              phone_number: reporter_phone,
+              phone_number: normalizedReporterPhone,
               phone_e164: normalizedReporterPhone,
               is_anonymous: false
             }
           });
+        } else if (!reporterRecord.name && reporter_name) {
+          reporterRecord = await tx.reporter.update({
+            where: { id: reporterRecord.id },
+            data: { name: reporter_name }
+          });
         }
 
-        finalReporterId = reporterRecord.id;
-      } else if (reporter_name) {
-        const reporterRecord = await tx.reporter.create({
-          data: {
-            name: reporter_name,
-            is_anonymous: false
-          }
-        });
         finalReporterId = reporterRecord.id;
       }
 
@@ -130,6 +168,54 @@ export const createEncounter = async (req, res) => {
   } catch (error) {
     console.error("Error starting field encounter:", error);
     res.status(500).json({ status: 'error', message: 'Failed to secure field data.', error: error.message });
+  }
+};
+
+export const getReporterSummary = async (req, res) => {
+  try {
+    const rawPhone = req.query.phone || req.params.phone;
+    const normalizedPhone = normalizePhoneNumber(rawPhone);
+
+    if (!normalizedPhone) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'A valid reporter phone number is required.'
+      });
+    }
+
+    const reporter = await prisma.reporter.findUnique({
+      where: { phone_e164: normalizedPhone },
+      include: {
+        _count: {
+          select: {
+            encounters: true
+          }
+        }
+      }
+    });
+
+    if (!reporter || reporter.deleted_at) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Reporter not found.'
+      });
+    }
+
+    return res.status(200).json({
+      status: 'success',
+      data: {
+        id: reporter.id,
+        name: reporter.name,
+        phone_number: reporter.phone_number,
+        total_report_count: reporter._count.encounters
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching reporter summary:', error);
+    return res.status(500).json({
+      status: 'error',
+      message: 'Failed to fetch reporter summary.'
+    });
   }
 };
 

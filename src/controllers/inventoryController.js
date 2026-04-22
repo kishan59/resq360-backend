@@ -32,12 +32,19 @@ export const logInventoryArrival = async (req, res) => {
       return res.status(400).json({ status: 'error', message: 'Quantity must be a positive integer.' });
     }
 
+    // Validate arrived_at if provided is reasonable (not in the future)
+    const requestedArrivedAt = req.body.arrived_at ? new Date(req.body.arrived_at) : new Date();
+    if (isNaN(requestedArrivedAt.getTime())) {
+      return res.status(400).json({ status: 'error', message: 'Invalid date format for arrived_at.' });
+    }
+
     const newStock = await prisma.inventoryArrival.create({
       data: {
         item_name,
         quantity: parsedQuantity,
         unit_type: unit_type || null,
-        logged_by_id
+        logged_by_id,
+        arrived_at: requestedArrivedAt
       }
     });
 
@@ -77,6 +84,7 @@ export const logInventoryArrival = async (req, res) => {
 export const getInventoryArrivals = async (req, res) => {
   try {
     const arrivals = await prisma.inventoryArrival.findMany({
+      where: { deleted_at: null },
       orderBy: { 
         arrived_at: 'desc'
       },

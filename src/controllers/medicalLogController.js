@@ -13,6 +13,11 @@ export const createMedicalLog = async (req, res) => {
     const patient_id = req.body.patient_id || req.params.id;
     const logged_by_id = req.user.id;
 
+    // Validate patient_id format and existence
+    if (!patient_id || typeof patient_id !== 'string' || patient_id.trim().length === 0) {
+      return res.status(400).json({ status: 'error', message: 'Valid Patient ID is required.' });
+    }
+
     const syncMeta = extractSyncMeta(req.body);
     const syncError = validateSyncMeta(syncMeta);
     if (syncError) {
@@ -26,6 +31,14 @@ export const createMedicalLog = async (req, res) => {
 
     if (!patient_id || !audio_log_url) {
       return res.status(400).json({ status: 'error', message: 'Patient ID and Audio Log URL are required.' });
+    }
+
+    // Verify patient exists and is not soft-deleted
+    const patientExists = await prisma.patient.findUnique({
+      where: { id: patient_id }
+    });
+    if (!patientExists || patientExists.deleted_at) {
+      return res.status(404).json({ status: 'error', message: 'Patient not found.' });
     }
 
     const newLog = await prisma.medicalLog.create({
@@ -74,6 +87,19 @@ export const createMedicalLog = async (req, res) => {
 export const getPatientLogs = async (req, res) => {
   try {
     const patient_id = req.params.patient_id || req.params.id;
+
+    // Validate patient_id format
+    if (!patient_id || typeof patient_id !== 'string' || patient_id.trim().length === 0) {
+      return res.status(400).json({ status: 'error', message: 'Valid Patient ID is required.' });
+    }
+
+    // Verify patient exists and is not soft-deleted
+    const patientExists = await prisma.patient.findUnique({
+      where: { id: patient_id }
+    });
+    if (!patientExists || patientExists.deleted_at) {
+      return res.status(404).json({ status: 'error', message: 'Patient not found.' });
+    }
 
     const logs = await prisma.medicalLog.findMany({
       where: { patient_id, deleted_at: null },

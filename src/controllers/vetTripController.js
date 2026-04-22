@@ -101,7 +101,7 @@ export const updateVetTripStatus = async (req, res) => {
     }
 
     const existingTrip = await prisma.vetTrip.findUnique({ where: { id } });
-    if (!existingTrip) {
+    if (!existingTrip || existingTrip.deleted_at) {
       return res.status(404).json({ status: 'error', message: 'Vet trip not found.' });
     }
 
@@ -117,11 +117,20 @@ export const updateVetTripStatus = async (req, res) => {
       });
     }
 
-    if (status === 'APPROVED' && !scheduled_date) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'scheduled_date is required when approving a vet trip.'
-      });
+    if (status === 'APPROVED') {
+      if (!scheduled_date) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'scheduled_date is required when approving a vet trip.'
+        });
+      }
+      const parsedDate = new Date(scheduled_date);
+      if (isNaN(parsedDate.getTime())) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'Invalid date format for scheduled_date.'
+        });
+      }
     }
 
     const updatedTrip = await prisma.vetTrip.update({
@@ -178,7 +187,8 @@ export const getApprovedTrips = async (req, res) => {
   try {
     const trips = await prisma.vetTrip.findMany({
       where: { 
-        status: 'APPROVED' 
+        status: 'APPROVED',
+        deleted_at: null
       },
       orderBy: { 
         scheduled_date: 'asc'

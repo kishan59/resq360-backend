@@ -8,5 +8,5 @@ export const normalizePhoneNumber = (phone) => {
     return null;
   }
 
-  return `+${digitsOnly}`;
+  return digitsOnly;
 };
