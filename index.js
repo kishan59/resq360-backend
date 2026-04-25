@@ -19,11 +19,6 @@ getJwtSecret();
 const app = express();
 app.use(express.json());
 
-// Simple Health Check
-app.get('/api/health', (req, res) => {
-  res.status(200).json({ status: 'success', message: 'ResQ360 API V2 is online and ready!' });
-});
-
 app.use('/api/users', userRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/encounters', encounterRoutes);
